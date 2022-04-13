@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -16,9 +17,9 @@ import (
 	"xsqlitex/pkg/repository/setting"
 )
 
-var Setting models.Month
+var Setting models.Settings
 
-func Insert(ctx context.Context, interval time.Duration, monthRepo month.IMonthRepository, settingRepo setting.ISettingRepository) {
+func Insert(ctx context.Context, monthRepo month.IMonthRepository, settingRepo setting.ISettingRepository) {
 	//log.Println(" insert 2 value to 1 table")
 
 	data, err := settingRepo.ReadAll(ctx)
@@ -27,11 +28,18 @@ func Insert(ctx context.Context, interval time.Duration, monthRepo month.IMonthR
 	}
 
 	for _, val := range data {
-		if val.Parameter == "device_id" {
+		switch val.Parameter {
+		case "device_id":
 			Setting.Dev_ID = val.Value
+		case "interval":
+			Setting.Interval = val.Value
 		}
 	}
+	intInterval, _ := strconv.Atoi(Setting.Interval)
+	interval := time.Duration(intInterval)
+	interval = interval * time.Minute
 	log.Printf("device_id:%s", Setting.Dev_ID)
+	log.Printf("interval :%v", interval)
 
 	var wg sync.WaitGroup
 	stopchan := make(chan bool, 1)
