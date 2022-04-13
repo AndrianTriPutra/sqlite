@@ -6,7 +6,7 @@ this code is an example using a sqlite database with golang, if you need records
 - sudo apt install sqlite3
 - git clone https://github.com/AndrianTriPutra/sqlite.git
 - cd sqlite
-- go mod vendor
+- go mod vendor (*if the error is caused by the package vendor)
 - go run . s_insert
 - go run . s_read
 - go run . s_update
