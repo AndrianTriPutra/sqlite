@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"time"
 
 	"xsqlitex/pkg/repository"
 	"xsqlitex/pkg/sqLite"
@@ -67,8 +66,7 @@ func main() {
 
 	case "m_insert":
 		fmt.Println()
-		interval := 1 * time.Minute
-		m_insert.Insert(ctx, interval, monthRepo, settingRepo)
+		m_insert.Insert(ctx, monthRepo, settingRepo)
 
 	case "m_read":
 		fmt.Println()
