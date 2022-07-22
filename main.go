@@ -20,7 +20,7 @@ import (
 
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	//defer cancel()
 
 	db := sqLite.NewsqliteDb("example.db")
 	err := db.Connect(ctx)
@@ -66,7 +66,7 @@ func main() {
 
 	case "m_insert":
 		fmt.Println()
-		m_insert.Insert(ctx, monthRepo, settingRepo)
+		m_insert.Insert(ctx, cancel, monthRepo, settingRepo)
 
 	case "m_read":
 		fmt.Println()

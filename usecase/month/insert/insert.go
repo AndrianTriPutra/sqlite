@@ -17,10 +17,17 @@ import (
 	"xsqlitex/pkg/repository/setting"
 )
 
-var Setting models.Settings
+func Insert(ctx context.Context, cancel context.CancelFunc, monthRepo month.IMonthRepository, settingRepo setting.ISettingRepository) {
+	var wg sync.WaitGroup
+	stoped := make(chan os.Signal, 1)
+	signal.Notify(stoped,
+		syscall.SIGHUP,
+		syscall.SIGINT,
+		syscall.SIGTERM,
+		syscall.SIGQUIT)
 
-func Insert(ctx context.Context, monthRepo month.IMonthRepository, settingRepo setting.ISettingRepository) {
 	//log.Println(" insert 2 value to 1 table")
+	var settingan models.Settings
 
 	data, err := settingRepo.ReadAll(ctx)
 	if err != nil {
@@ -30,42 +37,21 @@ func Insert(ctx context.Context, monthRepo month.IMonthRepository, settingRepo s
 	for _, val := range data {
 		switch val.Parameter {
 		case "device_id":
-			Setting.Dev_ID = val.Value
+			settingan.Dev_ID = val.Value
 		case "interval":
-			Setting.Interval = val.Value
+			settingan.Interval = val.Value
 		}
 	}
-	intInterval, _ := strconv.Atoi(Setting.Interval)
+	intInterval, _ := strconv.Atoi(settingan.Interval)
 	interval := time.Duration(intInterval)
-	interval = interval * time.Minute
-	log.Printf("device_id:%s", Setting.Dev_ID)
+	interval = interval * time.Second
+	log.Printf("device_id:%s", settingan.Dev_ID)
 	log.Printf("interval :%v", interval)
 
-	var wg sync.WaitGroup
-	stopchan := make(chan bool, 1)
-	kill := make(chan os.Signal, 1)
-	signal.Notify(kill,
-		syscall.SIGHUP,
-		syscall.SIGINT,
-		syscall.SIGTERM,
-		syscall.SIGQUIT)
-
+	wg.Add(3)
 	go func() {
 		wg.Wait()
-
-		close(stopchan)
-	}()
-
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-
-		sensor1_TableMonth(*ticker, stopchan, ctx, monthRepo)
-		runtime.Gosched()
+		cancel()
 	}()
 
 	go func() {
@@ -74,48 +60,45 @@ func Insert(ctx context.Context, monthRepo month.IMonthRepository, settingRepo s
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 
-		sensor2_TableMonth(*ticker, stopchan, ctx, monthRepo)
-		runtime.Gosched()
-	}()
-
-	exit_chan := make(chan int)
-	go func() {
-		for {
-			s := <-kill
-			switch s {
-			// kill -SIGHUP XXXX
-			case syscall.SIGHUP:
-				log.Println("close_cause [hungup]")
-				exit_chan <- 3
-
-			// kill -SIGINT XXXX or Ctrl+c
-			case syscall.SIGINT:
-				log.Println("close_cause [interupt]")
-				exit_chan <- 2
-
-			// kill -SIGTERM XXXX
-			case syscall.SIGTERM:
-				log.Println("close_cause [force_stop]")
-				exit_chan <- 0
-
-			// kill -SIGQUIT XXXX
-			case syscall.SIGQUIT:
-				log.Println("close_cause [stop and core dump]")
-				exit_chan <- 0
-
-			default:
-				log.Println("close_cause [Unknown signal]")
-				exit_chan <- 1
-			}
+		err := sensor1_TableMonth(*ticker, ctx, monthRepo)
+		if err != nil {
+			log.Fatalf("Error sensor1_TableMonth->" + err.Error())
 		}
+		runtime.Gosched()
 	}()
 
-	code := <-exit_chan
-	log.Println("< close one >")
-	os.Exit(code)
+	go func() {
+		defer wg.Done()
+
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		err := sensor2_TableMonth(*ticker, ctx, monthRepo)
+		if err != nil {
+			log.Fatalf("Error sensor2_TableMonth->" + err.Error())
+		}
+
+		runtime.Gosched()
+	}()
+
+	s := <-stoped
+	switch s {
+	case syscall.SIGHUP:
+		log.Println("[hungup]")
+	case syscall.SIGINT:
+		log.Println("[interupt]")
+	case syscall.SIGTERM:
+		log.Println("[force stop]")
+	case syscall.SIGQUIT:
+		log.Println("[stop and core dump]")
+	default:
+		log.Println("[Unknown signal]")
+	}
+
 }
 
-func sensor1_TableMonth(ticker time.Ticker, stop chan bool, ctx context.Context, monthRepo month.IMonthRepository) {
+func sensor1_TableMonth(ticker time.Ticker, ctx context.Context, monthRepo month.IMonthRepository) error {
+	var settingan models.Settings
 	temp := float32(15.15)
 	rh := float32(65.15)
 	for {
@@ -123,7 +106,7 @@ func sensor1_TableMonth(ticker time.Ticker, stop chan bool, ctx context.Context,
 		case <-ticker.C:
 			log.Println("[sensor 1]")
 			var data models.Month
-			data.Dev_ID = Setting.Dev_ID
+			data.Dev_ID = settingan.Dev_ID
 			data.Sensor_ID = 1
 			ts := time.Now()
 			data.Timestamp = ts.Format(time.RFC3339)
@@ -145,14 +128,15 @@ func sensor1_TableMonth(ticker time.Ticker, stop chan bool, ctx context.Context,
 				log.Fatalf("error InsertMonth2 :%v", err)
 			}
 
-		case <-stop:
-			log.Println("stop sensor1_TableMonth")
-			os.Exit(1)
+		case <-ctx.Done():
+			return ctx.Err()
+
 		}
 	}
 }
 
-func sensor2_TableMonth(ticker time.Ticker, stop chan bool, ctx context.Context, monthRepo month.IMonthRepository) {
+func sensor2_TableMonth(ticker time.Ticker, ctx context.Context, monthRepo month.IMonthRepository) error {
+	var settingan models.Settings
 	temp := float32(25.15)
 	rh := float32(75.15)
 	for {
@@ -160,7 +144,7 @@ func sensor2_TableMonth(ticker time.Ticker, stop chan bool, ctx context.Context,
 		case <-ticker.C:
 			log.Println("======== [sensor 2]")
 			var data models.Month
-			data.Dev_ID = Setting.Dev_ID
+			data.Dev_ID = settingan.Dev_ID
 			data.Sensor_ID = 2
 			ts := time.Now()
 			data.Timestamp = ts.Format(time.RFC3339)
@@ -182,9 +166,9 @@ func sensor2_TableMonth(ticker time.Ticker, stop chan bool, ctx context.Context,
 				log.Fatalf("error InsertMonth2 :%v", err)
 			}
 
-		case <-stop:
-			log.Println("stop sensor2_TableMonth")
-			os.Exit(1)
+		case <-ctx.Done():
+			return ctx.Err()
+
 		}
 	}
 }
